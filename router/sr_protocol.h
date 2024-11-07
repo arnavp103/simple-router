@@ -107,7 +107,7 @@ struct sr_ip_hdr {
   unsigned int ip_v : 4;  /* version */
   unsigned int ip_hl : 4; /* header length */
 #else
-#error "Byte ordering ot specified "
+#error "Byte ordering not specified "
 #endif
   uint8_t ip_tos;          /* type of service */
   uint16_t ip_len;         /* total length */
@@ -138,8 +138,44 @@ struct sr_ethernet_hdr {
 } __attribute__((packed));
 typedef struct sr_ethernet_hdr sr_ethernet_hdr_t;
 
+/*
+  From https://datatracker.ietf.org/doc/html/rfc792 ICMP spec
+  and the assignment, we need the following ICMP information:
+  Type 0 - Echo Reply Message
+  Type 3 - Destination Unreachable Message
+  Type 8 - Echo Request Message
+  Type 11 - Time Exceeded Message
+*/
+enum sr_icmp_type {
+  icmp_type_echo_reply = 0x0000,
+  icmp_type_dest_unreachable = 0x0003,
+  icmp_type_echo_request = 0x0008,
+  icmp_type_time_exceeded = 0x000B,
+};
+
+/*
+  From https://datatracker.ietf.org/doc/html/rfc792 ICMP spec
+  and the assignment, we need the following ICMP information:
+  Echo Reply Message:
+    no code
+  Destination Unreachable Message:
+    0 = net unreachable; 1 = host unreachable; 3 = port unreachable;
+  Echo Request Message:
+    no code
+  Time Exceeded Message:
+    0 = time to live exceeded in transit
+*/
+enum sr_icmp_code {
+  icmp_code_empty = 0x0000,
+  icmp_code_net_unreachable = 0x0000,
+  icmp_code_host_unreachable = 0x0001,
+  icmp_code_port_unreachable = 0x0003,
+  icmp_code_time_exceeded_transit = 0x0000,
+};
+
 enum sr_ip_protocol {
   ip_protocol_icmp = 0x0001,
+  // todo: add udp and tcp
 };
 
 enum sr_ethertype {

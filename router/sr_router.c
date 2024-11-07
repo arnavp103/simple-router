@@ -210,9 +210,9 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     return;
   }
 
-  /* sanity check - verify checksum
-  skip the ethernet header which makes up the first set of bytes */
-  sr_ip_hdr_t* ip_hdr = (sr_ip_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
+  // sanity check - verify checksum
+  // skip the ethernet header which makes up the first set of bytes
+  sr_ip_hdr_t* ip_hdr = (sr_ip_hdr_t*)(sizeof(sr_ethernet_hdr_t) + packet);
 
   /* set the checksum to 0 and see if we compute the same checksum */
   uint16_t checksum = ip_hdr->ip_sum;
@@ -244,8 +244,10 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   /* if the TTL is 0, send an ICMP TTL exceeded message */
   if (ip_hdr->ip_ttl == 0) {
-    /* // TODO: send ICMP TTL exceeded message */
     printf("TTL is 0\n");
+    struct sr_if* iface = sr_get_interface(sr, interface);
+    sr_send_icmp(sr, icmp_type_time_exceeded, icmp_code_time_exceeded_transit,
+                 packet, iface);
     return;
   }
 
