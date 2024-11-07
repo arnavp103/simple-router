@@ -73,33 +73,47 @@ void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
     return;
   }
 
+  printf("??? PERFORMING SUM\n");
   /* if the ARP request is for us, send an ARP reply */
   if (ntohs(arp_hdr->ar_op) == arp_op_request) {
     printf("ARP request for us\n");
     /* create the ARP reply */
-    uint8_t* reply = (uint8_t*)malloc(len);
+    uint8_t* reply = (uint8_t*)malloc(len + 1);
     memcpy(reply, packet, len);
 
+    printf("Created ARP reply\n");
     sr_ethernet_hdr_t* eth_hdr = (sr_ethernet_hdr_t*)reply;
     sr_arp_hdr_t* arp_hdr = (sr_arp_hdr_t*)(reply + sizeof(sr_ethernet_hdr_t));
 
+    /* Check if len is sufficient */
+    if (len < sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t)) {
+      fprintf(stderr, "Error: packet length is too small\n");
+      free(reply);
+      return;
+    }
+
+    printf("Setting up header\n");
     /* set the ethernet header */
     memcpy(eth_hdr->ether_dhost, eth_hdr->ether_shost, ETHER_ADDR_LEN);
     memcpy(eth_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
+    printf("Set the ethernet header\n");
     /* set the ARP header */
     arp_hdr->ar_op = htons(arp_op_reply);
     memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
     memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+
     arp_hdr->ar_tip = arp_hdr->ar_sip;
     arp_hdr->ar_sip = iface->ip;
 
     /* send the ARP reply */
     sr_send_packet(sr, reply, len, interface);
     free(reply);
+    return;
   }
 
   /* if the ARP reply is for us, cache the entry */
+  printf("ARP reply\n");
   if (ntohs(arp_hdr->ar_op) == arp_op_reply) {
     printf("ARP reply for us\n");
     struct sr_arpreq* req = sr_arpcache_insert(&(sr->cache), arp_hdr->ar_sha, arp_hdr->ar_sip);
@@ -150,17 +164,16 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   switch (ethtype) {
     case ethertype_arp:
-      printf("ARP packet\n");
+      printf("CLASS: ARP packet\n");
       sr_handle_arp(sr, packet, len, interface);
       break;
     case ethertype_ip:
-      printf("IP packet\n");
+      printf("CLASS: IP packet\n");
       sr_handle_ip(sr, packet, len, interface);
       break;
     default:
       fprintf(stderr, "Dropping unknown packet type\n");
   }
-
 } /* end sr_handlepacket */
 
 /*
@@ -243,31 +256,12 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
   sr_forward_ip(sr, packet, len, interface);
 }
 
-struct sr_arpentry* sr_lookup_arpcache(struct sr_instance* sr, in_addr_t ip) {
-  struct sr_arpcache cache = sr->cache;
-  pthread_mutex_lock(&(cache.lock));
-
-  struct sr_arpentry* entry = NULL;
-  int i;
-  for (i = 0; i < SR_ARPCACHE_SZ; i++) {
-    if (cache.entries[i].ip == ip) {
-      printf("Found entry in cache\n");
-      entry = &(cache.entries[i]);
-    }
-  }
-
-  pthread_mutex_unlock(&(cache.lock));
-  return entry;
-}
-
 void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                    unsigned int len, char* interface /* lent */) {
   struct sr_rt* route = sr->routing_table;
-  printf("Forwarding packet\n");
 
   struct sr_ip_hdr* ip_hdr = (struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 
-  printf("Forwarding packet to %d\n", ip_hdr->ip_dst);
   while (route != NULL) {
     if ((route->dest.s_addr & route->mask.s_addr) ==
         (ip_hdr->ip_dst & route->mask.s_addr)) break;
@@ -282,7 +276,7 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   in_addr_t destination_ip = route->dest.s_addr;
 
-  struct sr_arpentry* entry = sr_lookup_arpcache(sr, destination_ip);
+  struct sr_arpentry* entry = sr_arpcache_lookup(&(sr->cache), destination_ip);
 
   /* if the MAC address is not in the cache, send an ARP request (if last request was > 1s ago)
    and add the packet to the queue of packets waiting on this ARP request*/
@@ -308,7 +302,7 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     struct sr_arpreq* req = sr_arpcache_queuereq(&(sr->cache), destination_ip, packet, len, interface);
 
     /* // TODO: Free the request */
-    /* free(req); */
+    free(req);
     return;
   }
 
