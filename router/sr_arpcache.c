@@ -22,28 +22,28 @@
 */
 void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
   time_t now = time(NULL);
-  // take a lock on the cache since this can be concurrent
+  /* take a lock on the cache since this can be concurrent */
   pthread_mutex_lock(&(sr->cache.lock));
 
   if (difftime(now, req->sent) < 1.0) {
-    // if a request was sent in the last second, return
+    /* if a request was sent in the last second, return */
     pthread_mutex_unlock(&(sr->cache.lock));
     return;
   }
 
   if (req->times_sent >= 5) {
-    // if 5 requests have been sent, send icmp host unreachable
+    /* if 5 requests have been sent, send icmp host unreachable */
 
-    // walk the packets linked list and send icmp host unreachable
+    /* walk the packets linked list and send icmp host unreachable */
     struct sr_packet *packet;
     for (packet = req->packets; packet != NULL; packet = packet->next) {
-      // TODO: send icmp host unreachable
+      /* // TODO: send icmp host unreachable */
     }
-    // then destroy the request
+    /* // then destroy the request */
     sr_arpreq_destroy(&(sr->cache), req);
   }
 
-  // TODO: send an arp request
+  /* // TODO: send an ARP request */
 
   pthread_mutex_unlock(&(sr->cache.lock));
 }
@@ -59,9 +59,9 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
   req = sr->cache.requests;
 
   while (req != NULL) {
-    // keep a reference to the next request
-    // since handle req may destroy the current request
-    // if more than 5 requests have been sent
+    /* keep a reference to the next request
+    since handle req may destroy the current request
+    if more than 5 requests have been sent */
     next_req = req->next;
     sr_arpcache_handle_req(sr, req);
     req = next_req;
