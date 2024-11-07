@@ -30,6 +30,9 @@
  *
  *---------------------------------------------------------------------*/
 
+void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
+                   unsigned int len, char* interface /* lent */);
+
 void sendICMP() {
 }
 
@@ -51,6 +54,70 @@ void sr_init(struct sr_instance* sr) {
   /* Add initialization code here! */
 
 } /* -- sr_init -- */
+
+void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
+                   unsigned int len, char* interface /* lent */) {
+  /* sanity check - packet must be at least the size of ethernet and arp header */
+  if (len < (sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t))) {
+    fprintf(stderr, "Dropping ARP packet that is too short\n");
+    return;
+  }
+
+  /* sanity check - verify the ARP header */
+  sr_arp_hdr_t* arp_hdr = (sr_arp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
+
+  /* check if the ARP request is for us */
+  struct sr_if* iface = sr_get_interface(sr, interface);
+  if (arp_hdr->ar_tip != iface->ip) {
+    fprintf(stderr, "Dropping ARP request that is not for us\n");
+    return;
+  }
+
+  /* if the ARP request is for us, send an ARP reply */
+  if (ntohs(arp_hdr->ar_op) == arp_op_request) {
+    printf("ARP request for us\n");
+    /* create the ARP reply */
+    uint8_t* reply = (uint8_t*)malloc(len);
+    memcpy(reply, packet, len);
+
+    sr_ethernet_hdr_t* eth_hdr = (sr_ethernet_hdr_t*)reply;
+    sr_arp_hdr_t* arp_hdr = (sr_arp_hdr_t*)(reply + sizeof(sr_ethernet_hdr_t));
+
+    /* set the ethernet header */
+    memcpy(eth_hdr->ether_dhost, eth_hdr->ether_shost, ETHER_ADDR_LEN);
+    memcpy(eth_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+
+    /* set the ARP header */
+    arp_hdr->ar_op = htons(arp_op_reply);
+    memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+    memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+    arp_hdr->ar_tip = arp_hdr->ar_sip;
+    arp_hdr->ar_sip = iface->ip;
+
+    /* send the ARP reply */
+    sr_send_packet(sr, reply, len, interface);
+    free(reply);
+  }
+
+  /* if the ARP reply is for us, cache the entry */
+  if (ntohs(arp_hdr->ar_op) == arp_op_reply) {
+    printf("ARP reply for us\n");
+    struct sr_arpreq* req = sr_arpcache_insert(&(sr->cache), arp_hdr->ar_sha, arp_hdr->ar_sip);
+
+    /* if there are packets waiting on this ARP request, send them */
+    if (req) {
+      struct sr_packet* packet = req->packets;
+      while (packet) {
+        sr_forward_ip(sr, packet->buf, packet->len, packet->iface);
+        packet = packet->next;
+      }
+      sr_arpreq_destroy(&(sr->cache), req);
+
+    } else {
+      fprintf(stderr, "Dropping ARP reply that is not for us\n");
+    }
+  }
+}
 
 /*---------------------------------------------------------------------
  * Method: sr_handlepacket(uint8_t* p,char* interface)
@@ -83,9 +150,11 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   switch (ethtype) {
     case ethertype_arp:
+      printf("ARP packet\n");
       sr_handle_arp(sr, packet, len, interface);
       break;
     case ethertype_ip:
+      printf("IP packet\n");
       sr_handle_ip(sr, packet, len, interface);
       break;
     default:
@@ -139,6 +208,7 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     fprintf(stderr, "Dropping IP packet with invalid checksum\n");
     return;
   }
+
   ip_hdr->ip_sum = checksum; /* restore the checksum */
 
   /*   -- completed sanity check -- */
@@ -150,8 +220,9 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     if (curr->ip == ip_hdr->ip_dst) {
       /* we are the destination */
       /* TODO: handle the packet for us */
+      printf("Packet is for us\n");
+      return;
     }
-    return;
   }
 
   /*   not the destination, forward the packet
@@ -161,7 +232,7 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
   /* if the TTL is 0, send an ICMP TTL exceeded message */
   if (ip_hdr->ip_ttl == 0) {
     /* // TODO: send ICMP TTL exceeded message */
-
+    printf("TTL is 0\n");
     return;
   }
 
@@ -180,6 +251,7 @@ struct sr_arpentry* sr_lookup_arpcache(struct sr_instance* sr, in_addr_t ip) {
   int i;
   for (i = 0; i < SR_ARPCACHE_SZ; i++) {
     if (cache.entries[i].ip == ip) {
+      printf("Found entry in cache\n");
       entry = &(cache.entries[i]);
     }
   }
@@ -191,19 +263,20 @@ struct sr_arpentry* sr_lookup_arpcache(struct sr_instance* sr, in_addr_t ip) {
 void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                    unsigned int len, char* interface /* lent */) {
   struct sr_rt* route = sr->routing_table;
+  printf("Forwarding packet\n");
 
   struct sr_ip_hdr* ip_hdr = (struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 
-  while (route) {
+  printf("Forwarding packet to %d\n", ip_hdr->ip_dst);
+  while (route != NULL) {
     if ((route->dest.s_addr & route->mask.s_addr) ==
-        (ip_hdr->ip_dst & route->mask.s_addr)) {
-      break;
-    }
+        (ip_hdr->ip_dst & route->mask.s_addr)) break;
     route = route->next;
   }
 
   /* No match -> send an ICMP net unreachable message */
   if (!route) {
+    printf("No match in routing table\n");
     return;
   }
 
@@ -215,10 +288,22 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
    and add the packet to the queue of packets waiting on this ARP request*/
   if (!entry) {
     /* Check that the last request was sent more than 1 second ago*/
-    if (difftime(time(NULL), entry->added) < 1.0) {
+
+    /* Iterate through the ARP cache requests. */
+    struct sr_arpreq* arpReq = sr->cache.requests;
+    while (arpReq) {
+      if (arpReq->ip == destination_ip) {
+        break;
+      }
+      arpReq = arpReq->next;
+    }
+
+    if (arpReq && difftime(time(NULL), arpReq->sent) < 1.0) {
+      printf("ARP request sent less than 1 second ago\n");
       return;
     }
 
+    printf("ARP entry not found in cache\n");
     /* send ARP request */
     struct sr_arpreq* req = sr_arpcache_queuereq(&(sr->cache), destination_ip, packet, len, interface);
 
@@ -236,7 +321,6 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
   }
 
   struct sr_if* out_iface = sr_get_interface(sr, iface);
-
   /* update the ethernet header */
   struct sr_ethernet_hdr* eth_hdr = (struct sr_ethernet_hdr*)packet;
   memcpy(eth_hdr->ether_shost, out_iface->addr, ETHER_ADDR_LEN);
