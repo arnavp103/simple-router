@@ -175,7 +175,7 @@ enum sr_icmp_code {
 
 enum sr_ip_protocol {
   ip_protocol_icmp = 0x0001,
-  // todo: add udp and tcp
+  /* // todo: add udp and tcp */
 };
 
 enum sr_ethertype {

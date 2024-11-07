@@ -24,11 +24,18 @@
  * SUCH DAMAGE.
  *
  */
+#include "sr_if.h"
 
 #ifndef SR_UTILS_H
 #define SR_UTILS_H
 
-uint16_t cksum(const void *_data, int len);
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+
+uint16_t cksum(const void *data, int len);
 
 uint16_t ethertype(uint8_t *buf);
 uint8_t ip_protocol(uint8_t *buf);

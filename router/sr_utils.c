@@ -1,10 +1,7 @@
+
+
 #include "sr_utils.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "sr_if.h"
 #include "sr_protocol.h"
 #include "sr_router.h"
 #include "sr_rt.h"
@@ -35,12 +32,12 @@ sr_ethernet_hdr_t *sr_extract_eth_hdr(uint8_t *buf) {
 }
 
 sr_ip_hdr_t *sr_extract_ip_hdr(uint8_t *buf) {
-  // skip the ethernet header which goes first
+  /* skip the ethernet header which goes first */
   return (sr_ip_hdr_t *)(sizeof(sr_ethernet_hdr_t) + buf);
 }
 
 sr_icmp_t3_hdr_t *sr_extract_icmp_t3_hdr(uint8_t *buf) {
-  // skip the ethernet and ip headers
+  /* skip the ethernet and ip headers */
   return (sr_icmp_t3_hdr_t *)(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) +
                               buf);
 }
@@ -53,8 +50,9 @@ sr_icmp_t3_hdr_t *sr_extract_icmp_t3_hdr(uint8_t *buf) {
 */
 int sr_send_icmp_ping(struct sr_instance *sr, uint8_t icmp_type,
                       uint8_t *raw_frame, struct sr_if *iface) {
-  // for simplicity we will allocate a new frame and not reuse the buffer
-  // TODO: fix this
+  /* for simplicity we will allocate a new frame and not reuse the buffer */
+  /* TODO: fix this */
+  return 1;
 }
 
 /*
@@ -68,73 +66,81 @@ int sr_send_icmp_ping(struct sr_instance *sr, uint8_t icmp_type,
 */
 int sr_send_icmp(struct sr_instance *sr, uint8_t icmp_type, uint8_t icmp_code,
                  uint8_t *raw_frame, struct sr_if *iface) {
-  // for integrity we will allocate a new frame and not reuse the buffer
+  /* for integrity we will allocate a new frame and not reuse the buffer */
   unsigned int len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) +
                      sizeof(sr_icmp_t3_hdr_t);
   uint8_t *frame = (uint8_t *)calloc(1, len);
 
-  // get pointers to the headers of our frame
-  sr_ethernet_hdr_t *eth_hdr = sr_extract_eth_hdr(raw_frame);
-  sr_ip_hdr_t *ip_hdr = sr_extract_ip_hdr(raw_frame);
-  sr_icmp_t3_hdr_t *icmp_hdr = sr_extract_icmp_t3_hdr(raw_frame);
+  /* get pointers to the headers of our frame */
+  sr_ethernet_hdr_t *eth_hdr = sr_extract_eth_hdr(frame);
+  sr_ip_hdr_t *ip_hdr = sr_extract_ip_hdr(frame);
+  sr_icmp_t3_hdr_t *icmp_hdr = sr_extract_icmp_t3_hdr(frame);
 
-  // get orignal headers of the packet
+  /* get orignal headers of the packet */
   sr_ethernet_hdr_t *orig_eth_hdr = sr_extract_eth_hdr(raw_frame);
   sr_ip_hdr_t *orig_ip_hdr = sr_extract_ip_hdr(raw_frame);
 
-  // get the interface we send the packet out of
+  /* get the interface we send the packet out of */
   struct sr_if *out_iface = NULL;
   struct sr_rt *rt_entry;
 
-  // loop over the routing table entries
+  printf("Looping over routing table\n");
+  /* loop over the routing table entries */
   for (rt_entry = sr->routing_table; rt_entry != NULL;
        rt_entry = rt_entry->next) {
-    // find the entry where the masked original packet's src
-    // matches the routing table entry's dest
+    /* find the entry where the masked original packet's src */
+    /* matches the routing table entry's dest */
     if ((rt_entry->mask.s_addr & orig_ip_hdr->ip_src) ==
         rt_entry->dest.s_addr) {
       out_iface = sr_get_interface(sr, rt_entry->interface);
       break;
     }
   }
+
+  printf("Found interface\n");
   if (out_iface == NULL) {
     fprintf(stderr, "Could not find interface to send ICMP message\n");
     return -1;
   }
 
-  // fill in the ethernet header
-  // destination MAC address is the source MAC address of the original frame
+  printf("Ether type ip: %d\n", ethertype_ip);
+  printf("HTONS: %d\n", htons(ethertype_ip));
+  /* fill in the ethernet header */
+  /* destination MAC address is the source MAC address of the original frame */
   memcpy(eth_hdr->ether_dhost, orig_eth_hdr->ether_shost, ETHER_ADDR_LEN);
-  // source MAC address is the address of the interface we send the packet from
+  /* source MAC address is the address of the interface we send the packet from */
   memcpy(eth_hdr->ether_shost, out_iface->addr, ETHER_ADDR_LEN);
-  // set the ethernet type to IP
+  /* set the ethernet type to IP */
   eth_hdr->ether_type = htons(ethertype_ip);
 
-  // fill in the ip header
-  ip_hdr->ip_v = orig_ip_hdr->ip_v;      // reuse the ip version
-  ip_hdr->ip_hl = orig_ip_hdr->ip_hl;    // reuse the header length
-  ip_hdr->ip_tos = orig_ip_hdr->ip_tos;  // reuse the type of service
+  /* fill in the ip header */
+  ip_hdr->ip_v = orig_ip_hdr->ip_v;     /* reuse the ip version */
+  ip_hdr->ip_hl = orig_ip_hdr->ip_hl;   /* reuse the header length */
+  ip_hdr->ip_tos = orig_ip_hdr->ip_tos; /* reuse the type of service */
   ip_hdr->ip_len = htons(
-      len - sizeof(sr_ethernet_hdr_t));  // set the length of the ip header
-  ip_hdr->ip_id = 0;                     // set the id to 0 since it's not used
-  ip_hdr->ip_off = htons(IP_DF);         // set the flags to don't fragment
-  ip_hdr->ip_ttl = INIT_TTL;             // set the time to live to default
-  ip_hdr->ip_p = ip_protocol_icmp;       // set the protocol to ICMP
-  ip_hdr->ip_src = iface->ip;            // set source IP to the interface IP
-  ip_hdr->ip_dst = orig_ip_hdr->ip_src;  // set dest IP to the original source
+      len - sizeof(sr_ethernet_hdr_t)); /* set the length of the ip header */
+  ip_hdr->ip_id = 0;                    /* set the id to 0 since it's not used */
+  ip_hdr->ip_off = htons(IP_DF);        /* set the flags to don't fragment */
+  ip_hdr->ip_ttl = INIT_TTL;            /* set the time to live to default */
+  ip_hdr->ip_p = ip_protocol_icmp;      /* set the protocol to ICMP */
+  ip_hdr->ip_src = iface->ip;           /* set source IP to the interface IP */
+  ip_hdr->ip_dst = orig_ip_hdr->ip_src; /* set dest IP to the original source */
 
-  ip_hdr->ip_sum = 0;  // start with the checksum as 0
-  ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));  // compute the checksum
+  ip_hdr->ip_sum = 0;                                  /* start with the checksum as 0 */
+  ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t)); /* compute the checksum */
 
-  // fill in the icmp header
-  icmp_hdr->icmp_type = icmp_type;  // set the type of the ICMP message
-  icmp_hdr->icmp_code = icmp_code;  // set the code of the ICMP message
+  /* fill in the icmp header */
+  icmp_hdr->icmp_type = icmp_type; /* set the type of the ICMP message */
+  icmp_hdr->icmp_code = icmp_code; /* set the code of the ICMP message */
+  printf("eth_hdr->ether_type = %d\n", eth_hdr->ether_type);
   memcpy(icmp_hdr->data, orig_ip_hdr,
-         ICMP_DATA_SIZE);  // copy the header as data
-  icmp_hdr->icmp_sum = 0;  // start with the checksum as 0
+         ICMP_DATA_SIZE); /* copy the header as data */
+  icmp_hdr->icmp_sum = 0; /* start with the checksum as 0 */
   icmp_hdr->icmp_sum =
-      cksum(icmp_hdr, sizeof(sr_icmp_t3_hdr_t));  // compute checksum
+      cksum(icmp_hdr, sizeof(sr_icmp_t3_hdr_t)); /* compute checksum */
+  printf("eth_hdr->ether_type = %d\n", eth_hdr->ether_type);
 
+  print_hdr_eth(frame);
   return sr_send_packet(sr, frame, len, out_iface->name);
 }
 

@@ -35,24 +35,34 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
   if (req->times_sent >= 5) {
     /* if 5 requests have been sent, send icmp host unreachable */
 
-    // walk the packets linked list and send back icmp host unreachable
+    /*  walk the packets linked list and send back icmp host unreachable */
     struct sr_packet *packet;
+
+    printf("REQ PACKETS %p\n", req->packets);
     for (packet = req->packets; packet != NULL; packet = packet->next) {
       struct sr_if *packet_iface = sr_get_interface(sr, packet->iface);
       sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_host_unreachable,
                    packet->buf, packet_iface);
     }
+    printf("Sent ICMP host unreachable\n");
     /* // then destroy the request */
     sr_arpreq_destroy(&(sr->cache), req);
+    return;
   }
 
-  /* // TODO: send an ARP request */
   req->sent = now;
   req->times_sent++;
 
-  /* Use sr_send_packet */
+  /* Send an ARP request */
+
+  if (req->packets == NULL) {
+    fprintf(stderr, "Error: packet or interface is null\n");
+    return;
+  }
+
   struct sr_if *iface = sr_get_interface(sr, req->packets->iface);
-  uint8_t *arp_req = (uint8_t *)malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
+
+  uint8_t *arp_req = (uint8_t *)calloc(1, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
   sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)arp_req;
   sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(arp_req + sizeof(sr_ethernet_hdr_t));
 
@@ -74,7 +84,9 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
   memset(arp_hdr->ar_tha, 0, ETHER_ADDR_LEN);
   arp_hdr->ar_tip = req->ip;
 
-  sr_send_packet(sr, arp_req, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), iface->name);
+  if (sr_send_packet(sr, arp_req, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), iface->name) < 0) {
+    fprintf(stderr, "Error sending ARP request\n");
+  }
 
   pthread_mutex_unlock(&(sr->cache.lock));
 }

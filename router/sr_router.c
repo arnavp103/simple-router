@@ -32,6 +32,8 @@
 
 void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                    unsigned int len, char* interface /* lent */);
+void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
+                  unsigned int len, char* interface /* lent */);
 
 void sendICMP() {
 }
@@ -210,8 +212,8 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     return;
   }
 
-  // sanity check - verify checksum
-  // skip the ethernet header which makes up the first set of bytes
+  /*  sanity check - verify checksum
+   skip the ethernet header which makes up the first set of bytes */
   sr_ip_hdr_t* ip_hdr = (sr_ip_hdr_t*)(sizeof(sr_ethernet_hdr_t) + packet);
 
   /* set the checksum to 0 and see if we compute the same checksum */
@@ -287,6 +289,7 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
     /* Iterate through the ARP cache requests. */
     struct sr_arpreq* arpReq = sr->cache.requests;
+
     while (arpReq) {
       if (arpReq->ip == destination_ip) {
         break;
@@ -304,7 +307,7 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     struct sr_arpreq* req = sr_arpcache_queuereq(&(sr->cache), destination_ip, packet, len, interface);
 
     /* // TODO: Free the request */
-    free(req);
+    /* free(req); */
     return;
   }
 
