@@ -202,7 +202,6 @@ low-level details follow. For example, if an error occurs in any of the above
 steps, you will have to send an ICMP message back to the sender notifying them
 of an error. You may also get an ARP request or reply, which has to interact
 with the ARP cache correctly
-
 */
 void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                   unsigned int len, char* interface /* lent */) {
