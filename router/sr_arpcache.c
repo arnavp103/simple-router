@@ -12,6 +12,7 @@
 #include "sr_if.h"
 #include "sr_protocol.h"
 #include "sr_router.h"
+#include "sr_utils.h"
 
 /*
   Based on the pseudocode in the header
@@ -34,10 +35,12 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
   if (req->times_sent >= 5) {
     // if 5 requests have been sent, send icmp host unreachable
 
-    // walk the packets linked list and send icmp host unreachable
+    // walk the packets linked list and send back icmp host unreachable
     struct sr_packet *packet;
     for (packet = req->packets; packet != NULL; packet = packet->next) {
-      // TODO: send icmp host unreachable
+      struct sr_if *packet_iface = sr_get_interface(sr, packet->iface);
+      sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_host_unreachable,
+                   packet->buf, packet_iface);
     }
     // then destroy the request
     sr_arpreq_destroy(&(sr->cache), req);
