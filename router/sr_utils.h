@@ -24,7 +24,9 @@
  * SUCH DAMAGE.
  *
  */
+
 #include "sr_if.h"
+#include "sr_rt.h"
 
 #ifndef SR_UTILS_H
 #define SR_UTILS_H
@@ -42,6 +44,8 @@ uint8_t ip_protocol(uint8_t *buf);
 
 int sr_send_icmp(struct sr_instance *sr, uint8_t icmp_type, uint8_t icmp_code,
                  uint8_t *raw_frame, struct sr_if *iface);
+
+struct sr_if *sr_get_destination_iface(struct sr_instance *sr, uint32_t target_ip);
 
 void print_addr_eth(uint8_t *addr);
 void print_addr_ip(struct in_addr address);

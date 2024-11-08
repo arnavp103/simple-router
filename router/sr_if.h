@@ -1,7 +1,7 @@
 /*-----------------------------------------------------------------------------
  * file:  sr_if.h
- * date:  Sun Oct 06 14:13:13 PDT 2002 
- * Contact: casado@stanford.edu 
+ * date:  Sun Oct 06 14:13:13 PDT 2002
+ * Contact: casado@stanford.edu
  *
  * Description:
  *
@@ -35,8 +35,7 @@ struct sr_instance;
  *
  * -------------------------------------------------------------------------- */
 
-struct sr_if
-{
+struct sr_if {
   char name[sr_IFACE_NAMELEN];
   unsigned char addr[ETHER_ADDR_LEN];
   uint32_t ip;

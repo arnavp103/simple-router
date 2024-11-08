@@ -12,6 +12,7 @@
 #include "sr_if.h"
 #include "sr_protocol.h"
 #include "sr_router.h"
+#include "sr_rt.h"
 #include "sr_utils.h"
 
 /*
@@ -38,6 +39,7 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
     /*  walk the packets linked list and send back icmp host unreachable */
     struct sr_packet *packet;
 
+    printf("Exceeded 5 requests\n");
     printf("REQ PACKETS %p\n", req->packets);
     for (packet = req->packets; packet != NULL; packet = packet->next) {
       struct sr_if *packet_iface = sr_get_interface(sr, packet->iface);
@@ -60,34 +62,42 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
     return;
   }
 
-  struct sr_if *iface = sr_get_interface(sr, req->packets->iface);
+  printf("Sending ARP request\n");
 
-  uint8_t *arp_req = (uint8_t *)calloc(1, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
-  sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)arp_req;
-  sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(arp_req + sizeof(sr_ethernet_hdr_t));
+  unsigned int len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+  uint8_t *packet = (uint8_t *)malloc(len);
 
-  /* Ethernet header */
-  memset(eth_hdr->ether_dhost, 0xff, ETHER_ADDR_LEN);
-  memcpy(eth_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  uint32_t target_ip = req->ip;
+  struct sr_if *dest_iface = sr_get_destination_iface(sr, target_ip);
+
+  if (!dest_iface) {
+    fprintf(stderr, "No matching interface found for destination IP\n");
+    return;
+  }
+
+  sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)packet;
+  sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
+
+  /* // Ethernet header */
+  memset(eth_hdr->ether_dhost, 0xff, ETHER_ADDR_LEN); /* To BC */
+  memcpy(eth_hdr->ether_shost, dest_iface->addr, ETHER_ADDR_LEN);
   eth_hdr->ether_type = htons(ethertype_arp);
 
-  /* ARP header */
+  /* // ARP header */
   arp_hdr->ar_hrd = htons(arp_hrd_ethernet);
   arp_hdr->ar_pro = htons(ethertype_ip);
   arp_hdr->ar_hln = ETHER_ADDR_LEN;
-  arp_hdr->ar_pln = 4;
+  arp_hdr->ar_pln = sizeof(uint32_t);
   arp_hdr->ar_op = htons(arp_op_request);
+  memcpy(arp_hdr->ar_sha, dest_iface->addr, ETHER_ADDR_LEN);
+  arp_hdr->ar_sip = dest_iface->ip;
+  memset(arp_hdr->ar_tha, 0xff, ETHER_ADDR_LEN);
+  arp_hdr->ar_tip = target_ip;
 
-  memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
-  arp_hdr->ar_sip = iface->ip;
-
-  memset(arp_hdr->ar_tha, 0, ETHER_ADDR_LEN);
-  arp_hdr->ar_tip = req->ip;
-
-  if (sr_send_packet(sr, arp_req, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), iface->name) < 0) {
-    fprintf(stderr, "Error sending ARP request\n");
-  }
-
+  /* // Send the ARP request */
+  sr_send_packet(sr, packet, len, dest_iface->name);
+  /*
+    free(packet); */
   pthread_mutex_unlock(&(sr->cache.lock));
 }
 
@@ -106,6 +116,8 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
     since handle req may destroy the current request
     if more than 5 requests have been sent */
     next_req = req->next;
+    printf("Handling request for ip: ");
+    print_addr_ip_int(req->ip);
     sr_arpcache_handle_req(sr, req);
     req = next_req;
   }

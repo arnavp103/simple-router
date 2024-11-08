@@ -70,20 +70,21 @@ void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   /* check if the ARP request is for us */
   struct sr_if* iface = sr_get_interface(sr, interface);
+
   if (arp_hdr->ar_tip != iface->ip) {
     fprintf(stderr, "Dropping ARP request that is not for us\n");
     return;
   }
 
-  printf("??? PERFORMING SUM\n");
   /* if the ARP request is for us, send an ARP reply */
   if (ntohs(arp_hdr->ar_op) == arp_op_request) {
-    printf("ARP request for us\n");
+    printf(">>>>>>>>>>>>>>>>>>>> ARP request for us, we are:\n");
+    print_addr_ip_int(iface->ip);
+
     /* create the ARP reply */
     uint8_t* reply = (uint8_t*)malloc(len + 1);
     memcpy(reply, packet, len);
 
-    printf("Created ARP reply\n");
     sr_ethernet_hdr_t* eth_hdr = (sr_ethernet_hdr_t*)reply;
     sr_arp_hdr_t* arp_hdr = (sr_arp_hdr_t*)(reply + sizeof(sr_ethernet_hdr_t));
 
@@ -94,15 +95,20 @@ void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
       return;
     }
 
-    printf("Setting up header\n");
-    /* set the ethernet header */
+    /* | Ethernet header */
+
+    /* Set to requesters MAC */
     memcpy(eth_hdr->ether_dhost, eth_hdr->ether_shost, ETHER_ADDR_LEN);
+
+    /* Set to our MAC */
     memcpy(eth_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
-    printf("Set the ethernet header\n");
-    /* set the ARP header */
+    /* | ARP Header */
     arp_hdr->ar_op = htons(arp_op_reply);
+
+    /* Set target hardware address to the sender header from initial packet*/
     memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+
     memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
 
     arp_hdr->ar_tip = arp_hdr->ar_sip;
@@ -110,6 +116,9 @@ void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
 
     /* send the ARP reply */
     sr_send_packet(sr, reply, len, interface);
+    printf("Send ARP reply directed to:\n");
+    print_addr_ip_int(ntohl(arp_hdr->ar_tip));
+
     free(reply);
     return;
   }
@@ -158,10 +167,13 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t* packet /* lent */,
   assert(packet);
   assert(interface);
 
-  printf("*** -> Received packet of length %d \n", len);
-
+  printf("\n\n*** -> Received packet of length %d \n", len);
+  /* print_hdrs(packet, len);
+  printf("I AM \n");
+  print_addr_ip_int(sr_get_interface(sr, interface)->ip);
+   */
   /* dispatch based on what kind of packet this is
-   from enum sr_ethertype*/
+from enum sr_ethertype*/
   uint16_t ethtype = ethertype(packet);
 
   switch (ethtype) {
@@ -191,9 +203,14 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t* packet /* lent */,
 Given a raw Ethernet frame, if the frame contains an IP packet that is not
 destined for one of our interfaces: • Sanity-check the packet (meets minimum
 length and has correct checksum).
+
 • Decrement the TTL by 1, and recompute the packet checksum over the modified
-header. • Find out which entry in the routing table has the longest prefix match
-with the destination IP address. • Check the ARP cache for the next-hop MAC
+header.
+
+• Find out which entry in the routing table has the longest prefix match
+with the destination IP address.
+
+• Check the ARP cache for the next-hop MAC
 address corresponding to the next-hop IP. If it’s there, send it. Otherwise,
 send an ARP request for the next-hop IP (if one hasn’t been sent within the last
 second), and add the packet to the queue of packets waiting on this ARP request.
@@ -234,7 +251,35 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     if (curr->ip == ip_hdr->ip_dst) {
       /* we are the destination */
       /* TODO: handle the packet for us */
-      printf("Packet is for us\n");
+
+      printf("I AM THE DESTINATION\n");
+      /* if the packet is an ICMP echo request, send an ICMP echo reply */
+      if (ip_hdr->ip_p == ip_protocol_icmp) {
+        printf("\tICMP packet\n");
+        sr_icmp_hdr_t* icmp_hdr = (sr_icmp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+        if (icmp_hdr->icmp_type == icmp_type_echo_request) {
+          printf("\tICMP echo request\n");
+          struct sr_if* iface = sr_get_interface(sr, interface);
+          /* sr_send_icmp(sr, icmp_type_echo_reply, icmp_code_echo_reply, packet, iface); */
+          sr_send_icmp(sr, icmp_type_echo_reply, NULL, packet, iface);
+          return;
+        }
+      }
+
+      /* If the packet is a TCP or UDP packet, send an ICMP port unreachable message */
+      /*  if (ip_hdr->ip_p == ip_protocpo || ip_hdr->ip_p == ip_protocol_udp) {
+         struct sr_if* iface = sr_get_interface(sr, interface);
+         sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_port_unreachable, packet, iface);
+         return;
+       }
+ */
+      /* if the packet is not an ICMP echo request, drop the packet */
+      /*     if (ip_hdr->ip_p != ip_protocol_icmp) {
+            fprintf(stderr, "Dropping packet that is not an ICMP echo request\n");
+            return;
+          }  */
+
+      printf("I DONT KNOW WHAT TO DO\n");
       return;
     }
   }
@@ -265,11 +310,43 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   struct sr_ip_hdr* ip_hdr = (struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 
+  struct sr_rt* best_match = NULL;
+
+  printf("Source IP: \n");
+  print_addr_ip_int(ip_hdr->ip_src);
+
+  printf("Destination IP: \n");
+  print_addr_ip_int(ip_hdr->ip_dst);
+
+  /* Longest prefix match */
   while (route != NULL) {
-    if ((route->dest.s_addr & route->mask.s_addr) ==
-        (ip_hdr->ip_dst & route->mask.s_addr)) break;
+    /*     if (route->dest.s_addr == route->gw.s_addr) {
+          printf("Skipping default route\n");
+          route = route->next;
+          continue;
+        } */
+
+    printf("~~ Route ~~\n");
+    print_addr_ip_int(route->dest.s_addr);
+    print_addr_ip_int(route->mask.s_addr);
+    print_addr_ip_int(route->gw.s_addr);
+
+    /* Print MAC  */
+    struct sr_if* iface = sr_get_interface(sr, route->interface);
+    printf("Interface MAC: \n");
+    print_addr_eth(iface->addr);
+
+    /* Do not break or else we will always match broadcast. */
+    if ((route->mask.s_addr & ip_hdr->ip_dst) == route->dest.s_addr) {
+      printf("Match in routing table\n");
+      best_match = route;
+    }
+    printf("~~~~~~~~~~~\n");
     route = route->next;
   }
+
+  /* Set route to the best match. */
+  route = best_match;
 
   /* No match -> send an ICMP net unreachable message */
   if (!route) {
@@ -277,7 +354,7 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     return;
   }
 
-  in_addr_t destination_ip = route->dest.s_addr;
+  in_addr_t destination_ip = route->gw.s_addr;
 
   struct sr_arpentry* entry = sr_arpcache_lookup(&(sr->cache), destination_ip);
 
@@ -289,41 +366,40 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     /* Iterate through the ARP cache requests. */
     struct sr_arpreq* arpReq = sr->cache.requests;
 
+    printf("Looking for destination IP:\n");
+    print_addr_ip_int(destination_ip);
     while (arpReq) {
+      printf("ARP REQUEST IP: %d\n", arpReq->ip);
+
       if (arpReq->ip == destination_ip) {
         break;
       }
       arpReq = arpReq->next;
     }
 
-    if (arpReq && difftime(time(NULL), arpReq->sent) < 1.0) {
-      printf("ARP request sent less than 1 second ago\n");
-      return;
-    }
-
-    printf("ARP entry not found in cache\n");
     /* send ARP request */
-    struct sr_arpreq* req = sr_arpcache_queuereq(&(sr->cache), destination_ip, packet, len, interface);
+    sr_arpcache_queuereq(&(sr->cache), destination_ip, packet, len, interface);
+    /*  handle_arpreq(req); */
 
-    /* // TODO: Free the request */
-    /* free(req); */
     return;
   }
 
-  /* if the MAC address is in the cache, send the packet */
-  const char* iface;
-  if (route->interface) {
-    iface = route->interface;
-  } else {
-    iface = interface;
-  }
+  uint8_t* mac = entry->mac;
 
-  struct sr_if* out_iface = sr_get_interface(sr, iface);
-  /* update the ethernet header */
+  /* Get the interface */
+  struct sr_if* iface = sr_get_interface(sr, route->interface);
+
+  /* Set the ethernet header */
   struct sr_ethernet_hdr* eth_hdr = (struct sr_ethernet_hdr*)packet;
-  memcpy(eth_hdr->ether_shost, out_iface->addr, ETHER_ADDR_LEN);
-  memcpy(eth_hdr->ether_dhost, entry->mac, ETHER_ADDR_LEN);
 
-  /* send the packet */
-  sr_send_packet(sr, packet, len, iface);
+  /* Set the destination MAC address to the next hop MAC address */
+  memcpy(eth_hdr->ether_dhost, mac, ETHER_ADDR_LEN);
+
+  /* Set the source MAC address to the MAC address of the outgoing interface */
+  memcpy(eth_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+
+  /* Send the packet */
+  sr_send_packet(sr, packet, len, iface->name);
+
+  free(entry);
 }
