@@ -89,7 +89,7 @@ int sr_send_icmp_ping(struct sr_instance *sr, uint8_t icmp_type,
        rt_entry = rt_entry->next) {
     /* find the entry where the masked original packet's src */
     /* matches the routing table entry's dest */
-    if ((rt_entry->mask.s_addr & ip_hdr->ip_src) == rt_entry->dest.s_addr) {
+    if ((rt_entry->mask.s_addr & orig_ip_hdr->ip_src) == rt_entry->dest.s_addr) {
       out_iface = sr_get_interface(sr, rt_entry->interface);
       break;
     }
@@ -151,39 +151,22 @@ int sr_send_icmp(struct sr_instance *sr, uint8_t icmp_type, uint8_t icmp_code,
   uint8_t *frame = (uint8_t *)calloc(1, len);
 
   /* get pointers to the headers of our frame */
-  sr_ethernet_hdr_t *eth_hdr = sr_extract_eth_hdr(raw_frame);
-  sr_ip_hdr_t *ip_hdr = sr_extract_ip_hdr(raw_frame);
-  sr_icmp_t3_hdr_t *icmp_hdr = sr_extract_icmp_t3_hdr(raw_frame);
+  sr_ethernet_hdr_t *eth_hdr = sr_extract_eth_hdr(frame);
+  sr_ip_hdr_t *ip_hdr = sr_extract_ip_hdr(frame);
+  sr_icmp_t3_hdr_t *icmp_hdr = sr_extract_icmp_t3_hdr(frame);
 
   /* get orignal headers of the packet */
   sr_ethernet_hdr_t *orig_eth_hdr = sr_extract_eth_hdr(raw_frame);
   sr_ip_hdr_t *orig_ip_hdr = sr_extract_ip_hdr(raw_frame);
 
   /* get the interface we send the packet out of */
-  struct sr_if *out_iface = NULL;
-  struct sr_rt *rt_entry;
+  struct sr_if *out_iface = sr_get_destination_iface(sr, orig_ip_hdr->ip_src);
 
-  printf("Looping over routing table\n");
-  /* loop over the routing table entries */
-  for (rt_entry = sr->routing_table; rt_entry != NULL;
-       rt_entry = rt_entry->next) {
-    /* find the entry where the masked original packet's src */
-    /* matches the routing table entry's dest */
-    if ((rt_entry->mask.s_addr & orig_ip_hdr->ip_src) ==
-        rt_entry->dest.s_addr) {
-      out_iface = sr_get_interface(sr, rt_entry->interface);
-      break;
-    }
-  }
-
-  printf("Found interface\n");
   if (out_iface == NULL) {
     fprintf(stderr, "Could not find interface to send ICMP message\n");
     return -1;
   }
 
-  printf("Ether type ip: %d\n", ethertype_ip);
-  printf("HTONS: %d\n", htons(ethertype_ip));
   /* fill in the ethernet header */
   /* destination MAC address is the source MAC address of the original frame */
   memcpy(eth_hdr->ether_dhost, orig_eth_hdr->ether_shost, ETHER_ADDR_LEN);
@@ -219,7 +202,9 @@ int sr_send_icmp(struct sr_instance *sr, uint8_t icmp_type, uint8_t icmp_code,
   icmp_hdr->icmp_sum =
       cksum(icmp_hdr, sizeof(sr_icmp_t3_hdr_t)); /* compute checksum */
 
-  printf("Possble err\n");
+  printf("Possible err\n");
+  print_hdr_ip(frame + sizeof(sr_ethernet_hdr_t));
+  print_hdr_icmp(frame + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
   return sr_send_packet(sr, frame, len, out_iface->name);
 }
 

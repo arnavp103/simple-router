@@ -244,6 +244,19 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   /*   -- completed sanity check -- */
 
+  /*   not the destination, forward the packet
+  decrement the TTL */
+  ip_hdr->ip_ttl--;
+
+  /* if the TTL is 0, send an ICMP TTL exceeded message */
+  if (ip_hdr->ip_ttl == 0) {
+    printf("TTL is 0\n");
+    struct sr_if* iface = sr_get_interface(sr, interface);
+    sr_send_icmp(sr, icmp_type_time_exceeded, icmp_code_time_exceeded_transit,
+                 packet, iface);
+    return;
+  }
+
   /* loop through interfaces to see if we're the destination
   if we are, handle it and early return */
   struct sr_if* curr;
@@ -286,19 +299,6 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
     }
   }
 
-  /*   not the destination, forward the packet
-  decrement the TTL */
-  ip_hdr->ip_ttl--;
-
-  /* if the TTL is 0, send an ICMP TTL exceeded message */
-  if (ip_hdr->ip_ttl == 0) {
-    printf("TTL is 0\n");
-    struct sr_if* iface = sr_get_interface(sr, interface);
-    sr_send_icmp(sr, icmp_type_time_exceeded, icmp_code_time_exceeded_transit,
-                 packet, iface);
-    return;
-  }
-
   /* recompute the checksum */
   ip_hdr->ip_sum = 0;
   ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
@@ -317,7 +317,6 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   /* Longest prefix match */
   while (route != NULL) {
-    struct sr_if* iface = sr_get_interface(sr, route->interface);
     if ((route->mask.s_addr & ip_hdr->ip_dst) == route->dest.s_addr) {
       best_match = route;
     }

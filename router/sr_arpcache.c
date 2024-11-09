@@ -41,6 +41,7 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
 
     printf("Exceeded 5 requests\n");
     printf("REQ PACKETS %p\n", req->packets);
+
     for (packet = req->packets; packet != NULL; packet = packet->next) {
       struct sr_if *packet_iface = sr_get_interface(sr, packet->iface);
       sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_host_unreachable,
