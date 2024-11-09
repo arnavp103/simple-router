@@ -125,7 +125,8 @@ void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
   printf("ARP reply\n");
   if (ntohs(arp_hdr->ar_op) == arp_op_reply) {
     printf("ARP reply for us\n");
-    struct sr_arpreq* req = sr_arpcache_insert(&(sr->cache), arp_hdr->ar_sha, arp_hdr->ar_sip);
+    struct sr_arpreq* req =
+        sr_arpcache_insert(&(sr->cache), arp_hdr->ar_sha, arp_hdr->ar_sip);
 
     /* if there are packets waiting on this ARP request, send them */
     if (req) {
@@ -220,7 +221,8 @@ with the ARP cache correctly
 */
 void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                   unsigned int len, char* interface /* lent */) {
-  /* sanity check - packet must be at least the size of ethernet and ip header */
+  /* sanity check - packet must be at least the size of ethernet and ip header
+   */
   if (len < (sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t))) {
     fprintf(stderr, "Dropping IP packet that is too short\n");
     return;
@@ -253,21 +255,24 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
       /* if the packet is an ICMP echo request, send an ICMP echo reply */
       if (ip_hdr->ip_p == ip_protocol_icmp) {
         printf("\tICMP packet\n");
-        sr_icmp_hdr_t* icmp_hdr = (sr_icmp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+        sr_icmp_hdr_t* icmp_hdr =
+            (sr_icmp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t) +
+                             sizeof(sr_ip_hdr_t));
         if (icmp_hdr->icmp_type == icmp_type_echo_request) {
           printf("\tICMP echo request\n");
           struct sr_if* iface = sr_get_interface(sr, interface);
-          /* sr_send_icmp(sr, icmp_type_echo_reply, icmp_code_echo_reply, packet, iface); */
-          sr_send_icmp(sr, icmp_type_echo_reply, NULL, packet, iface);
+          sr_send_icmp_ping(sr, icmp_type_echo_reply, packet, iface);
           return;
         }
       }
 
-      /* If the packet is a TCP or UDP packet, send an ICMP port unreachable message */
+      /* If the packet is a TCP or UDP packet, send an ICMP port unreachable
+       * message */
       if (ip_hdr->ip_p == ip_protocol_tcp || ip_hdr->ip_p == ip_protocol_udp) {
         struct sr_if* iface = sr_get_interface(sr, interface);
         printf("Dropping TCP or UDP packet\n");
-        sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_port_unreachable, packet, iface);
+        sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_port_unreachable,
+                     packet, iface);
         return;
       }
 
@@ -305,7 +310,8 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                    unsigned int len, char* interface /* lent */) {
   struct sr_rt* route = sr->routing_table;
 
-  struct sr_ip_hdr* ip_hdr = (struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
+  struct sr_ip_hdr* ip_hdr =
+      (struct sr_ip_hdr*)(packet + sizeof(struct sr_ethernet_hdr));
 
   struct sr_rt* best_match = NULL;
 
