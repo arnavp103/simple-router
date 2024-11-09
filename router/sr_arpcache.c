@@ -96,8 +96,7 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
 
   /* // Send the ARP request */
   sr_send_packet(sr, packet, len, dest_iface->name);
-  /*
-    free(packet); */
+  /*free(packet); */
   pthread_mutex_unlock(&(sr->cache.lock));
 }
 

@@ -35,9 +35,6 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
                   unsigned int len, char* interface /* lent */);
 
-void sendICMP() {
-}
-
 void sr_init(struct sr_instance* sr) {
   /* REQUIRES */
   assert(sr);
@@ -59,7 +56,8 @@ void sr_init(struct sr_instance* sr) {
 
 void sr_handle_arp(struct sr_instance* sr, uint8_t* packet /* lent */,
                    unsigned int len, char* interface /* lent */) {
-  /* sanity check - packet must be at least the size of ethernet and arp header */
+  /* sanity check - packet must be at least the size of ethernet and arp header
+   */
   if (len < (sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t))) {
     fprintf(stderr, "Dropping ARP packet that is too short\n");
     return;
@@ -351,6 +349,9 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
   /* No match -> send an ICMP net unreachable message */
   if (!route) {
     printf("No match in routing table\n");
+    struct sr_if* iface = sr_get_interface(sr, interface);
+    sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_net_unreachable,
+                 packet, iface);
     return;
   }
 
@@ -358,8 +359,9 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   struct sr_arpentry* entry = sr_arpcache_lookup(&(sr->cache), destination_ip);
 
-  /* if the MAC address is not in the cache, send an ARP request (if last request was > 1s ago)
-   and add the packet to the queue of packets waiting on this ARP request*/
+  /* if the MAC address is not in the cache, send an ARP request (if last
+   request was > 1s ago) and add the packet to the queue of packets waiting on
+   this ARP request*/
   if (!entry) {
     /* Check that the last request was sent more than 1 second ago*/
 
