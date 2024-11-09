@@ -62,8 +62,6 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
     return;
   }
 
-  printf("Sending ARP request\n");
-
   unsigned int len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
   uint8_t *packet = (uint8_t *)malloc(len);
 
@@ -78,25 +76,28 @@ void sr_arpcache_handle_req(struct sr_instance *sr, struct sr_arpreq *req) {
   sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)packet;
   sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
 
+  unsigned char *dest_addr = dest_iface->addr;
+
   /* // Ethernet header */
   memset(eth_hdr->ether_dhost, 0xff, ETHER_ADDR_LEN); /* To BC */
-  memcpy(eth_hdr->ether_shost, dest_iface->addr, ETHER_ADDR_LEN);
-  eth_hdr->ether_type = htons(ethertype_arp);
+  memset(arp_hdr->ar_tha, 0xff, ETHER_ADDR_LEN);
+  memcpy(eth_hdr->ether_shost, dest_addr, ETHER_ADDR_LEN);
+  memcpy(arp_hdr->ar_sha, dest_addr, ETHER_ADDR_LEN);
 
-  /* // ARP header */
+  arp_hdr->ar_hln = ETHER_ADDR_LEN;
+
+  eth_hdr->ether_type = htons(ethertype_arp);
   arp_hdr->ar_hrd = htons(arp_hrd_ethernet);
   arp_hdr->ar_pro = htons(ethertype_ip);
-  arp_hdr->ar_hln = ETHER_ADDR_LEN;
-  arp_hdr->ar_pln = sizeof(uint32_t);
   arp_hdr->ar_op = htons(arp_op_request);
-  memcpy(arp_hdr->ar_sha, dest_iface->addr, ETHER_ADDR_LEN);
+
+  arp_hdr->ar_pln = sizeof(uint32_t);
   arp_hdr->ar_sip = dest_iface->ip;
-  memset(arp_hdr->ar_tha, 0xff, ETHER_ADDR_LEN);
   arp_hdr->ar_tip = target_ip;
 
   /* // Send the ARP request */
   sr_send_packet(sr, packet, len, dest_iface->name);
-  /*free(packet); */
+
   pthread_mutex_unlock(&(sr->cache.lock));
 }
 
