@@ -152,6 +152,7 @@ int sr_send_icmp(struct sr_instance *sr, uint8_t icmp_type, uint8_t icmp_code,
   icmp_hdr->icmp_sum =
       cksum(icmp_hdr, sizeof(sr_icmp_t3_hdr_t)); /* compute checksum */
 
+  printf("Possble err\n");
   return sr_send_packet(sr, frame, len, out_iface->name);
 }
 

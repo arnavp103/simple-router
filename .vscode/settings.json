@@ -10,7 +10,8 @@
 		"stdint.h": "c",
 		"sr_utils.h": "c",
 		"types.h": "c",
-		"sr_protocol.h": "c"
+		"sr_protocol.h": "c",
+		"stdio.h": "c"
 	},
 	"C_Cpp.errorSquiggles": "disabled"
 }

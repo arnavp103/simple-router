@@ -250,7 +250,6 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
       /* we are the destination */
       /* TODO: handle the packet for us */
 
-      printf("I AM THE DESTINATION\n");
       /* if the packet is an ICMP echo request, send an ICMP echo reply */
       if (ip_hdr->ip_p == ip_protocol_icmp) {
         printf("\tICMP packet\n");
@@ -265,19 +264,19 @@ void sr_handle_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
       }
 
       /* If the packet is a TCP or UDP packet, send an ICMP port unreachable message */
-      /*  if (ip_hdr->ip_p == ip_protocpo || ip_hdr->ip_p == ip_protocol_udp) {
-         struct sr_if* iface = sr_get_interface(sr, interface);
-         sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_port_unreachable, packet, iface);
-         return;
-       }
- */
-      /* if the packet is not an ICMP echo request, drop the packet */
-      /*     if (ip_hdr->ip_p != ip_protocol_icmp) {
-            fprintf(stderr, "Dropping packet that is not an ICMP echo request\n");
-            return;
-          }  */
+      if (ip_hdr->ip_p == ip_protocol_tcp || ip_hdr->ip_p == ip_protocol_udp) {
+        struct sr_if* iface = sr_get_interface(sr, interface);
+        printf("Dropping TCP or UDP packet\n");
+        sr_send_icmp(sr, icmp_type_dest_unreachable, icmp_code_port_unreachable, packet, iface);
+        return;
+      }
 
-      printf("I DONT KNOW WHAT TO DO\n");
+      /* if the packet is not an ICMP echo request, drop the packet */
+      if (ip_hdr->ip_p != ip_protocol_icmp) {
+        fprintf(stderr, "Dropping packet that is not an ICMP echo request\n");
+        return;
+      }
+
       return;
     }
   }
@@ -310,36 +309,12 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
   struct sr_rt* best_match = NULL;
 
-  printf("Source IP: \n");
-  print_addr_ip_int(ip_hdr->ip_src);
-
-  printf("Destination IP: \n");
-  print_addr_ip_int(ip_hdr->ip_dst);
-
   /* Longest prefix match */
   while (route != NULL) {
-    /*     if (route->dest.s_addr == route->gw.s_addr) {
-          printf("Skipping default route\n");
-          route = route->next;
-          continue;
-        } */
-
-    printf("~~ Route ~~\n");
-    print_addr_ip_int(route->dest.s_addr);
-    print_addr_ip_int(route->mask.s_addr);
-    print_addr_ip_int(route->gw.s_addr);
-
-    /* Print MAC  */
     struct sr_if* iface = sr_get_interface(sr, route->interface);
-    printf("Interface MAC: \n");
-    print_addr_eth(iface->addr);
-
-    /* Do not break or else we will always match broadcast. */
     if ((route->mask.s_addr & ip_hdr->ip_dst) == route->dest.s_addr) {
-      printf("Match in routing table\n");
       best_match = route;
     }
-    printf("~~~~~~~~~~~\n");
     route = route->next;
   }
 
@@ -367,9 +342,6 @@ void sr_forward_ip(struct sr_instance* sr, uint8_t* packet /* lent */,
 
     /* Iterate through the ARP cache requests. */
     struct sr_arpreq* arpReq = sr->cache.requests;
-
-    printf("Looking for destination IP:\n");
-    print_addr_ip_int(destination_ip);
     while (arpReq) {
       printf("ARP REQUEST IP: %d\n", arpReq->ip);
 
